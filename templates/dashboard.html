@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Traffic Monitoring System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg:        #060810;
+        --surface:   #0d1120;
+        --panel:     #111827;
+        --border:    rgba(255,255,255,.07);
+        --border-hi: rgba(100,160,255,.28);
+        --accent:    #4d8bff;
+        --accent2:   #8b5cf6;
+        --text:      #e8eeff;
+        --muted:     #6b7a99;
+        --success:   #22d3a5;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: 'DM Sans', sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+
+      /* ── noise grain ── */
+      body::before {
+        content: '';
+        position: fixed; inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+        pointer-events: none; z-index: 0;
+      }
+
+      /* ── ambient glow orbs ── */
+      .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(120px);
+        pointer-events: none;
+        z-index: 0;
+        opacity: .18;
+      }
+      .orb-1 { width: 600px; height: 600px; background: #2563eb; top: -180px; left: -120px; }
+      .orb-2 { width: 500px; height: 500px; background: #7c3aed; bottom: -100px; right: -80px; }
+      .orb-3 { width: 300px; height: 300px; background: #0ea5e9; top: 40%; left: 55%; }
+
+      /* ── layout ── */
+      .shell {
+        position: relative;
+        z-index: 1;
+        max-width: 1160px;
+        margin: 0 auto;
+        padding: 48px 24px 72px;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+
+      /* ── header ── */
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 56px;
+        width: 100%;
+      }
+      .logo {
+        display: flex; align-items: center; gap: 12px;
+        font-family: 'Syne', sans-serif;
+        font-weight: 800;
+        font-size: 1.35rem;
+        letter-spacing: -.02em;
+        color: var(--text);
+      }
+      .logo-mark {
+        width: 40px; height: 40px;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        border-radius: 10px;
+        display: grid; place-items: center;
+      }
+      .logo-mark svg { width: 20px; height: 20px; fill: #fff; }
+
+      /* ── hero section ── */
+      .hero {
+        text-align: center;
+        margin-bottom: 64px;
+        max-width: 700px;
+      }
+      .hero h1 {
+        font-family: 'Syne', sans-serif;
+        font-size: clamp(2.2rem, 5vw, 3.5rem);
+        font-weight: 800;
+        line-height: 1.1;
+        letter-spacing: -.03em;
+        margin-bottom: 16px;
+      }
+      .hero h1 span {
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .hero p {
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.7;
+        font-weight: 300;
+      }
+
+      /* ── action grid ── */
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+        width: 100%;
+        max-width: 700px;
+      }
+
+      /* ── action card ── */
+      .action-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 40px 32px;
+        cursor: pointer;
+        transition: all .3s ease;
+        position: relative;
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .action-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 50% 0%, rgba(77,139,255,.1), transparent 70%);
+        opacity: 0;
+        transition: opacity .3s ease;
+      }
+
+      .action-card:hover {
+        border-color: rgba(100,160,255,.4);
+        background: linear-gradient(135deg, rgba(77,139,255,.08), rgba(139,92,246,.06));
+        transform: translateY(-8px);
+      }
+
+      .action-card:hover::before { opacity: 1; }
+
+      .card-icon {
+        width: 64px; height: 64px;
+        border-radius: 14px;
+        background: rgba(77,139,255,.12);
+        display: grid; place-items: center;
+        margin-bottom: 20px;
+        transition: all .3s ease;
+      }
+
+      .action-card:hover .card-icon {
+        background: linear-gradient(135deg, rgba(77,139,255,.25), rgba(139,92,246,.25));
+        transform: scale(1.08);
+      }
+
+      .card-icon svg {
+        width: 32px; height: 32px;
+        stroke: var(--accent);
+        fill: none;
+        stroke-width: 1.5;
+        transition: stroke .3s ease;
+      }
+
+      .action-card:hover .card-icon svg { stroke: #a8d0ff; }
+
+      .card-title {
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 1.25rem;
+        margin-bottom: 10px;
+      }
+
+      .card-desc {
+        color: var(--muted);
+        font-size: .9rem;
+        line-height: 1.6;
+        font-weight: 300;
+      }
+
+      /* ── disabled state ── */
+      .action-card.disabled {
+        cursor: not-allowed;
+        opacity: .6;
+        pointer-events: none;
+      }
+
+      /* ── footer ── */
+      footer {
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: #384260;
+        font-size: .76rem;
+        letter-spacing: .04em;
+      }
+
+      /* responsive */
+      @media (max-width: 640px) {
+        .shell { padding: 36px 20px 56px; }
+        .hero { margin-bottom: 48px; }
+        .action-grid { gap: 16px; }
+        .action-card { padding: 32px 24px; }
+      }
+    </style>
+  </head>
+  <body>
+
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <div class="shell">
+
+      <!-- header -->
+      <header>
+        <div class="logo">
+          <div class="logo-mark">
+            <svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm3.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/></svg>
+          </div>
+          Traffic Monitoring
+        </div>
+      </header>
+
+      <!-- hero -->
+      <div class="hero">
+        <h1>Traffic <span>Monitoring</span> System</h1>
+        <p>Analyze vehicle flow, detect patterns, and optimize traffic management with real-time monitoring and advanced analytics.</p>
+      </div>
+
+      <!-- action cards -->
+      <div class="action-grid">
+        <!-- upload card -->
+        <a href="/upload" class="action-card">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+          </div>
+          <div class="card-title">Upload</div>
+          <div class="card-desc">Upload video files for analysis and classification</div>
+        </a>
+
+        <!-- query card (disabled) -->
+        <div class="action-card disabled">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              <text x="11" y="15" text-anchor="middle" font-size="8" fill="currentColor" stroke="none">?</text>
+            </svg>
+          </div>
+          <div class="card-title">Query</div>
+          <div class="card-desc">Search and filter uploaded videos (coming soon)</div>
+        </div>
+      </div>
+
+      <!-- footer -->
+      <footer>© 2026 Traffic Monitoring System · Powered by AI Analytics</footer>
+
+    </div>
+
+  </body>
+</html>

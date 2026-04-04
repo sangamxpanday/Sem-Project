@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analysis Results</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg:        #060810;
+        --surface:   #0d1120;
+        --panel:     #111827;
+        --border:    rgba(255,255,255,.07);
+        --accent:    #4d8bff;
+        --accent2:   #8b5cf6;
+        --text:      #e8eeff;
+        --muted:     #6b7a99;
+        --success:   #22d3a5;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: 'DM Sans', sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: '';
+        position: fixed; inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+        pointer-events: none; z-index: 0;
+      }
+
+      .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(120px);
+        pointer-events: none;
+        z-index: 0;
+        opacity: .18;
+      }
+      .orb-1 { width: 600px; height: 600px; background: #2563eb; top: -180px; left: -120px; }
+      .orb-2 { width: 500px; height: 500px; background: #7c3aed; bottom: -100px; right: -80px; }
+
+      .shell {
+        position: relative;
+        z-index: 1;
+        max-width: 1160px;
+        margin: 0 auto;
+        padding: 48px 24px 72px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 56px;
+      }
+
+      .back-btn {
+        width: 40px; height: 40px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(77,139,255,.08);
+        color: var(--accent);
+        cursor: pointer;
+        display: grid; place-items: center;
+        transition: all .2s ease;
+        text-decoration: none;
+      }
+      .back-btn:hover {
+        background: rgba(77,139,255,.15);
+        border-color: var(--accent);
+        transform: translateX(-2px);
+      }
+      .back-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+      .logo {
+        display: flex; align-items: center; gap: 10px;
+        font-family: 'Syne', sans-serif;
+        font-weight: 800;
+        font-size: 1.25rem;
+        letter-spacing: -.02em;
+        color: var(--text);
+      }
+      .logo-mark {
+        width: 32px; height: 32px;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        border-radius: 8px;
+        display: grid; place-items: center;
+      }
+      .logo-mark svg { width: 16px; height: 16px; fill: #fff; }
+
+      .hero {
+        margin-bottom: 40px;
+      }
+      .hero h1 {
+        font-family: 'Syne', sans-serif;
+        font-size: clamp(2rem, 4vw, 3rem);
+        font-weight: 800;
+        line-height: 1.1;
+        letter-spacing: -.03em;
+        margin-bottom: 12px;
+      }
+      .hero h1 span {
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .hero p {
+        color: var(--muted);
+        font-size: .95rem;
+        line-height: 1.65;
+        font-weight: 300;
+      }
+
+      .results-table {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 40px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      thead {
+        background: rgba(77,139,255,.08);
+        border-bottom: 1px solid var(--border);
+      }
+
+      th {
+        padding: 16px;
+        text-align: left;
+        font-weight: 600;
+        font-size: .9rem;
+        color: var(--accent);
+        letter-spacing: .05em;
+      }
+
+      td {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        font-size: .85rem;
+      }
+
+      tbody tr:hover {
+        background: rgba(77,139,255,.04);
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      .empty-state {
+        padding: 64px 24px;
+        text-align: center;
+        color: var(--muted);
+      }
+      .empty-state svg { width: 40px; height: 40px; stroke: var(--muted); fill: none; stroke-width: 1.4; margin-bottom: 16px; opacity: .6; }
+
+      .btn-download {
+        padding: 8px 14px;
+        background: linear-gradient(135deg, #3b72ff 0%, #7c3aed 100%);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: .8rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        transition: opacity .2s;
+      }
+      .btn-download:hover { opacity: .92; }
+
+      footer {
+        text-align: center;
+        margin-top: 64px;
+        color: #384260;
+        font-size: .78rem;
+        letter-spacing: .04em;
+      }
+    </style>
+  </head>
+  <body>
+
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <div class="shell">
+
+      <!-- header -->
+      <header>
+        <a href="/upload" class="back-btn" title="Back">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+          </svg>
+        </a>
+        <div style="flex:1;"></div>
+        <div class="logo">
+          <div class="logo-mark">
+            <svg viewBox="0 0 20 20"><path d="M3 12a9 9 0 0118 0 9 9 0 01-18 0z"/></svg>
+          </div>
+          Analysis Results
+        </div>
+      </header>
+
+      <!-- hero -->
+      <div class="hero">
+        <h1>Traffic <span>Analysis</span> Results</h1>
+        <p>View and download vehicle detection results from your video uploads.</p>
+      </div>
+
+      <!-- results table -->
+      {% if results %}
+        <div class="results-table">
+          <table>
+            <thead>
+              <tr>
+                <th>📹 Video File</th>
+                <th>📊 CSV Result</th>
+                <th>🎯 Detections</th>
+                <th>⏰ Capture Time</th>
+                <th>💾 Size</th>
+                <th>📥 Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in results %}
+              <tr>
+                <td style="color:#7ab2ff; font-weight:500;">{{ item.video_file }}</td>
+                <td style="font-family:monospace; font-size:.8rem;">{{ item.csv_file }}</td>
+                <td style="text-align:center; color:#22d3a5;">{{ item.detections }}</td>
+                <td style="font-size:.8rem;">{{ item.capture_time[:19]|replace('T', ' ') if item.capture_time != 'N/A' else 'N/A' }}</td>
+                <td>{{ (item.file_size|float / 1024)|round(2) }} KB</td>
+                <td>
+                  <a href="/results/{{ item.csv_file }}" download class="btn-download">📥 Download</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="results-table">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V10l-6-8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <p>No analysis results yet. Upload a video to get started.</p>
+          </div>
+        </div>
+      {% endif %}
+
+      <footer>Processing videos in background • Results saved with date/time detection timestamps</footer>
+    </div>
+
+  </body>
+</html>

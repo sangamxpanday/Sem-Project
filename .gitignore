@@ -1,0 +1,41 @@
+# Model files
+*.pt
+*.pth
+*.ckpt
+
+# Video files
+*.mp4
+*.avi
+*.mov
+
+# Data files
+*.csv
+*.parquet
+dataset/
+data/
+traffic_dataset.csv
+*.webp
+*.png
+*.jpg
+*.jpeg
+
+# Jupyter
+.ipynb_checkpoints/
+__pycache__/
+*.ipynb
+
+# Python
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+.env
+.vscode/
+
+# Runs and results
+runs/
+uploads/
+models/*.pt
