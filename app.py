@@ -7,6 +7,7 @@ import cv2
 import pandas as pd
 import threading
 import json
+import numpy as np
 
 # Try to import YOLO
 try:
@@ -15,6 +16,14 @@ try:
 except ImportError:
     YOLO_AVAILABLE = False
     print("⚠️  ultralytics not installed. Install with: pip install ultralytics opencv-python")
+
+# Try to import DeepSORT
+try:
+    from deep_sort_realtime.deepsort_tracker import DeepSort
+    DEEPSORT_AVAILABLE = True
+except ImportError:
+    DEEPSORT_AVAILABLE = False
+    print("⚠️  deep-sort-realtime not installed. Install with: pip install deep-sort-realtime")
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads', 'videos')
 RESULTS_FOLDER = os.path.join(os.path.dirname(__file__), 'results')
@@ -105,7 +114,7 @@ def allowed_file(filename):
 
 def process_video_inference(video_path, upload_time, video_filename):
     """
-    Process video: run inference, calculate timestamps, create CSV.
+    Process video: run detection, track with DeepSORT, calculate timestamps, create CSV.
     video_path: full path to video file
     upload_time: datetime object when user captured video
     video_filename: original video filename for tracking
@@ -117,7 +126,21 @@ def process_video_inference(video_path, upload_time, video_filename):
         return None
     
     print(f"   ✅ [1] Detector available")
+    
+    # Initialize tracker if available
+    tracker = None
+    if DEEPSORT_AVAILABLE:
+        try:
+            tracker = DeepSort(max_age=30, n_init=3, nn_budget=100)
+            print(f"   ✅ DeepSORT tracker initialized")
+        except Exception as e:
+            print(f"   ⚠️  DeepSORT initialization failed: {e}")
+            print(f"   ⚠️  Continuing with untracked detections...")
+    else:
+        print(f"   ⚠️  DeepSORT not available - detections will not be tracked")
+    
     results_data = []
+    track_info = {}  # Store track info: {track_id: [first_frame, last_frame, vehicle_type, ...]}
     
     try:
         # Open video
@@ -134,7 +157,7 @@ def process_video_inference(video_path, upload_time, video_filename):
             print(f"   ❌ [2] Invalid video: {frame_count} frames, {fps} FPS - STOPPING")
             return None
         
-        print(f"   [3] Starting frame processing...")
+        print(f"   [3] Starting frame processing with {'tracking' if tracker else 'detection only'}...")
         frame_idx = 0
         while True:
             ret, frame = cap.read()
@@ -149,40 +172,130 @@ def process_video_inference(video_path, upload_time, video_filename):
             
             # Run detection
             results = DETECTOR(frame, verbose=False, conf=0.3)
+            detections = []
+            detection_info = {}  # Store detection info for tracking
             
             if results and results[0].boxes:
-                for box in results[0].boxes:
+                for idx, box in enumerate(results[0].boxes):
                     cls_id = int(box.cls[0])
                     label = DETECTOR.names.get(cls_id, "unknown")
                     
                     # Only process vehicle classes
                     if label in VEHICLE_CLASSES:
                         conf = float(box.conf[0])
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
                         
-                        # Try to classify if classifier available
-                        vehicle_type = label
-                        if CLASSIFIER:
-                            try:
-                                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                                crop = frame[y1:y2, x1:x2]
-                                if crop.size > 0:
+                        # Prepare detection for tracker
+                        if tracker:
+                            detections.append([x1, y1, x2-x1, y2-y1, conf])  # [x, y, w, h, conf]
+                            detection_info[idx] = {
+                                'bbox': (x1, y1, x2, y2),
+                                'label': label,
+                                'conf': conf,
+                                'frame': frame_idx,
+                                'timestamp': detection_time
+                            }
+            
+            # Update tracker with detections
+            if tracker and detections:
+                try:
+                    detections = np.array(detections, dtype=np.float32)
+                    tracked_objects = tracker.update_tracks(detections, frame=frame)
+                    
+                    for track in tracked_objects:
+                        if not track.is_confirmed():
+                            continue
+                        
+                        track_id = track.track_id
+                        x1, y1, x2, y2 = [int(x) for x in track.to_tlbr()]
+                        
+                        # Find corresponding detection info
+                        detection_idx = track.detection_as_np(True) if hasattr(track, 'detection_as_np') else None
+                        
+                        # Get detection info (match by proximity)
+                        best_match_idx = None
+                        best_dist = float('inf')
+                        for det_idx, det_info in detection_info.items():
+                            d_x1, d_y1, d_x2, d_y2 = det_info['bbox']
+                            dist = abs(d_x1 - x1) + abs(d_y1 - y1)
+                            if dist < best_dist:
+                                best_dist = dist
+                                best_match_idx = det_idx
+                        
+                        if best_match_idx is not None:
+                            det_info = detection_info[best_match_idx]
+                            label = det_info['label']
+                            conf = det_info['conf']
+                            
+                            # Try to classify if classifier available
+                            vehicle_type = label
+                            crop = frame[y1:y2, x1:x2]
+                            if CLASSIFIER and crop.size > 0:
+                                try:
                                     class_results = CLASSIFIER(crop, verbose=False)
                                     if class_results[0].probs:
                                         top_class_id = class_results[0].probs.top1
                                         top_class_name = class_results[0].names[top_class_id]
                                         vehicle_type = f"{label}_{top_class_name}"
-                            except:
-                                pass  # Use default label if classification fails
-                        
-                        results_data.append({
-                            'date': detection_time.strftime('%Y-%m-%d'),
-                            'time': detection_time.strftime('%H:%M:%S'),
-                            'video_timestamp': f"{int(video_timestamp_sec//60)}:{int(video_timestamp_sec%60):02d}",
-                            'vehicle_type': vehicle_type,
-                            'confidence': round(conf, 4),
-                            'frame': frame_idx,
-                            'video_source': video_filename
-                        })
+                                except:
+                                    pass
+                            
+                            # Store track info
+                            if track_id not in track_info:
+                                track_info[track_id] = {
+                                    'first_frame': frame_idx,
+                                    'first_time': detection_time,
+                                    'vehicle_type': vehicle_type,
+                                    'confidence': conf
+                                }
+                            
+                            track_info[track_id]['last_frame'] = frame_idx
+                            track_info[track_id]['last_time'] = detection_time
+                            
+                            results_data.append({
+                                'date': detection_time.strftime('%Y-%m-%d'),
+                                'time': detection_time.strftime('%H:%M:%S'),
+                                'video_timestamp': f"{int(video_timestamp_sec//60)}:{int(video_timestamp_sec%60):02d}",
+                                'track_id': track_id,
+                                'vehicle_type': vehicle_type,
+                                'confidence': round(conf, 4),
+                                'frame': frame_idx,
+                                'video_source': video_filename
+                            })
+                
+                except Exception as e:
+                    print(f"       ⚠️  Tracking error on frame {frame_idx}: {e}")
+            
+            elif not tracker:
+                # Fallback to untracked detections
+                for det_idx, det_info in detection_info.items():
+                    label = det_info['label']
+                    conf = det_info['conf']
+                    x1, y1, x2, y2 = det_info['bbox']
+                    
+                    # Try to classify
+                    vehicle_type = label
+                    crop = frame[y1:y2, x1:x2]
+                    if CLASSIFIER and crop.size > 0:
+                        try:
+                            class_results = CLASSIFIER(crop, verbose=False)
+                            if class_results[0].probs:
+                                top_class_id = class_results[0].probs.top1
+                                top_class_name = class_results[0].names[top_class_id]
+                                vehicle_type = f"{label}_{top_class_name}"
+                        except:
+                            pass
+                    
+                    results_data.append({
+                        'date': detection_time.strftime('%Y-%m-%d'),
+                        'time': detection_time.strftime('%H:%M:%S'),
+                        'video_timestamp': f"{int(video_timestamp_sec//60)}:{int(video_timestamp_sec%60):02d}",
+                        'track_id': -1,  # No tracking
+                        'vehicle_type': vehicle_type,
+                        'confidence': round(conf, 4),
+                        'frame': frame_idx,
+                        'video_source': video_filename
+                    })
             
             frame_idx += 1
             if frame_idx % max(1, frame_count // 10) == 0:
@@ -192,7 +305,8 @@ def process_video_inference(video_path, upload_time, video_filename):
         cap.release()
         
         print(f"   ✅ [3] Frame processing complete")
-        print(f"   📊 [4] Detected {len(results_data)} vehicles total")
+        print(f"   📊 [4] Detected {len(results_data)} total detections")
+        print(f"   🎯 [4] Tracked {len(track_info)} unique vehicles")
         
         # Create DataFrame
         print(f"   [5] Creating CSV...")
@@ -222,7 +336,9 @@ def process_video_inference(video_path, upload_time, video_filename):
             'csv_file': csv_filename,
             'video_file': video_filename,
             'capture_time': upload_time.isoformat(),
-            'detections': len(results_data)
+            'total_detections': len(results_data),
+            'unique_tracks': len(track_info),
+            'track_info': track_info
         }
         save_result_metadata(metadata)
         print(f"   ✅ [7] Metadata saved")
@@ -411,6 +527,7 @@ def api_status():
         'yolo_available': YOLO_AVAILABLE,
         'detector_loaded': DETECTOR is not None,
         'classifier_loaded': CLASSIFIER is not None,
+        'deepsort_available': DEEPSORT_AVAILABLE,
         'upload_folder': app.config['UPLOAD_FOLDER'],
         'results_folder': app.config['RESULTS_FOLDER']
     }
@@ -423,6 +540,7 @@ if __name__ == '__main__':
     print(f"🔧 YOLO Available: {YOLO_AVAILABLE}")
     print(f"🤖 Detector Loaded: {DETECTOR is not None}")
     print(f"📊 Classifier Loaded: {CLASSIFIER is not None}")
+    print(f"🎯 DeepSORT Available: {DEEPSORT_AVAILABLE}")
     print("="*60 + "\n")
     
     import os
