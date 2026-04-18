@@ -90,7 +90,7 @@ if YOLO_AVAILABLE:
     except Exception as e:
         print(f"❌ Failed to load classifier: {e}")
 
-VEHICLE_CLASSES = ["car", "motorcycle", "bus", "truck"]
+VEHICLE_CLASSES = ["bicycle", "car", "motorcycle", "bus", "truck"]
 
 
 # Error handlers
@@ -131,8 +131,10 @@ def process_video_inference(video_path, upload_time, video_filename):
     tracker = None
     if DEEPSORT_AVAILABLE:
         try:
-            tracker = DeepSort(max_age=30, n_init=3, nn_budget=100)
-            print(f"   ✅ DeepSORT tracker initialized")
+            # TEMPORARILY DISABLED FOR DEBUGGING
+            # tracker = DeepSort(max_age=30, n_init=3, nn_budget=100)
+            # print(f"   ✅ DeepSORT tracker initialized")
+            print(f"   ⚠️  DeepSORT tracking temporarily disabled for debugging")
         except Exception as e:
             print(f"   ⚠️  DeepSORT initialization failed: {e}")
             print(f"   ⚠️  Continuing with untracked detections...")
@@ -176,27 +178,37 @@ def process_video_inference(video_path, upload_time, video_filename):
             detection_info = {}  # Store detection info for tracking
             
             if results and results[0].boxes:
+                if frame_idx == 0:
+                    print(f"       [DEBUG] Frame 0: Found {len(results[0].boxes)} objects")
+                
                 for idx, box in enumerate(results[0].boxes):
                     cls_id = int(box.cls[0])
                     label = DETECTOR.names.get(cls_id, "unknown")
+                    conf = float(box.conf[0])
+                    
+                    # Debug: print first few detections
+                    if frame_idx == 0:
+                        print(f"       [DEBUG] Box {idx}: class={label}, conf={conf}, VEHICLE_CLASSES={VEHICLE_CLASSES}, match={label in VEHICLE_CLASSES}")
                     
                     # Only process vehicle classes
                     if label in VEHICLE_CLASSES:
-                        conf = float(box.conf[0])
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         
                         # Prepare detection for tracker
                         if tracker:
                             detections.append([x1, y1, x2-x1, y2-y1, conf])  # [x, y, w, h, conf]
-                            detection_info[idx] = {
-                                'bbox': (x1, y1, x2, y2),
-                                'label': label,
-                                'conf': conf,
-                                'frame': frame_idx,
-                                'timestamp': detection_time
-                            }
+                        
+                        detection_info[idx] = {
+                            'bbox': (x1, y1, x2, y2),
+                            'label': label,
+                            'conf': conf,
+                            'frame': frame_idx,
+                            'timestamp': detection_time
+                        }
+            elif frame_idx == 0:
+                print(f"       [DEBUG] Frame 0: No objects detected in results")
             
-            # Update tracker with detections
+            # Update tracker with detections (or use untracked fallback)
             if tracker and detections:
                 try:
                     # Convert detections to list format: [[x1,y1,x2,y2,conf], [x1,y1,x2,y2,conf], ...]
@@ -266,8 +278,8 @@ def process_video_inference(video_path, upload_time, video_filename):
                 except Exception as e:
                     print(f"       ⚠️  Tracking error on frame {frame_idx}: {e}")
             
-            elif not tracker:
-                # Fallback to untracked detections
+            # Always use untracked fallback if no tracker or tracking failed
+            if not tracker and detection_info:
                 for det_idx, det_info in detection_info.items():
                     label = det_info['label']
                     conf = det_info['conf']
