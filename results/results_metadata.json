@@ -1,0 +1,18 @@
+[
+  {
+    "csv_file": "20260418_131900_15300538-hd_1920_1080_60fps_traffic.csv",
+    "video_file": "15300538-hd_1920_1080_60fps.mp4",
+    "capture_time": "2026-04-18T13:19:00",
+    "total_detections": 12133,
+    "unique_tracks": 0,
+    "track_info": {}
+  },
+  {
+    "csv_file": "20260418_132400_13566876_3840_2160_30fps_traffic.csv",
+    "video_file": "13566876_3840_2160_30fps.mp4",
+    "capture_time": "2026-04-18T13:24:00",
+    "total_detections": 2343,
+    "unique_tracks": 0,
+    "track_info": {}
+  }
+]

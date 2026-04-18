@@ -131,10 +131,8 @@ def process_video_inference(video_path, upload_time, video_filename):
     tracker = None
     if DEEPSORT_AVAILABLE:
         try:
-            # TEMPORARILY DISABLED FOR DEBUGGING
-            # tracker = DeepSort(max_age=30, n_init=3, nn_budget=100)
-            # print(f"   ✅ DeepSORT tracker initialized")
-            print(f"   ⚠️  DeepSORT tracking temporarily disabled for debugging")
+            tracker = DeepSort(max_age=30, n_init=3, nn_budget=100)
+            print(f"   ✅ DeepSORT tracker initialized")
         except Exception as e:
             print(f"   ⚠️  DeepSORT initialization failed: {e}")
             print(f"   ⚠️  Continuing with untracked detections...")
@@ -178,17 +176,10 @@ def process_video_inference(video_path, upload_time, video_filename):
             detection_info = {}  # Store detection info for tracking
             
             if results and results[0].boxes:
-                if frame_idx == 0:
-                    print(f"       [DEBUG] Frame 0: Found {len(results[0].boxes)} objects")
-                
                 for idx, box in enumerate(results[0].boxes):
                     cls_id = int(box.cls[0])
                     label = DETECTOR.names.get(cls_id, "unknown")
                     conf = float(box.conf[0])
-                    
-                    # Debug: print first few detections
-                    if frame_idx == 0:
-                        print(f"       [DEBUG] Box {idx}: class={label}, conf={conf}, VEHICLE_CLASSES={VEHICLE_CLASSES}, match={label in VEHICLE_CLASSES}")
                     
                     # Only process vehicle classes
                     if label in VEHICLE_CLASSES:
@@ -205,8 +196,6 @@ def process_video_inference(video_path, upload_time, video_filename):
                             'frame': frame_idx,
                             'timestamp': detection_time
                         }
-            elif frame_idx == 0:
-                print(f"       [DEBUG] Frame 0: No objects detected in results")
             
             # Update tracker with detections (or use untracked fallback)
             if tracker and detections:
