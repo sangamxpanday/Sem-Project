@@ -51,6 +51,7 @@ if YOLO_AVAILABLE:
         print(f"❌ Failed to load classifier: {e}")
 
 VEHICLE_CLASSES = ["car", "motorcycle", "bus", "truck"]
+TRACKER_CONFIG = "bytetrack.yaml"
 
 
 def allowed_file(filename):
@@ -91,8 +92,19 @@ def process_video_inference(video_path, upload_time, video_filename):
             # Calculate actual detection time
             detection_time = upload_time + timedelta(seconds=video_timestamp_sec)
             
-            # Run detection
-            results = DETECTOR(frame, verbose=False, conf=0.5)
+            # Run detection + tracking (persist IDs across frames)
+            try:
+                results = DETECTOR.track(
+                    frame,
+                    persist=True,
+                    verbose=False,
+                    conf=0.5,
+                    tracker=TRACKER_CONFIG
+                )
+            except Exception as e:
+                # Fallback to plain detection if tracker has an environment issue
+                print(f"⚠️  Tracking unavailable, falling back to detection-only mode: {e}")
+                results = DETECTOR(frame, verbose=False, conf=0.5)
             
             if results and results[0].boxes:
                 for box in results[0].boxes:
@@ -102,14 +114,29 @@ def process_video_inference(video_path, upload_time, video_filename):
                     # Only process vehicle classes
                     if label in VEHICLE_CLASSES:
                         conf = float(box.conf[0])
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        track_id = None
+                        track_value = getattr(box, "id", None)
+                        if track_value is not None:
+                            track_value = track_value.tolist() if hasattr(track_value, "tolist") else track_value
+                            if isinstance(track_value, (list, tuple)):
+                                if track_value:
+                                    track_id = int(track_value[0])
+                            else:
+                                track_id = int(track_value)
                         
                         # Try to classify if classifier available
                         vehicle_type = label
                         if CLASSIFIER:
                             try:
-                                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                                crop = frame[y1:y2, x1:x2]
-                                if crop.size > 0:
+                                h, w = frame.shape[:2]
+                                x1_clip, y1_clip = max(0, x1), max(0, y1)
+                                x2_clip, y2_clip = min(w, x2), min(h, y2)
+                                if x1_clip < x2_clip and y1_clip < y2_clip:
+                                    crop = frame[y1_clip:y2_clip, x1_clip:x2_clip]
+                                else:
+                                    crop = None
+                                if crop is not None and crop.size > 0:
                                     class_results = CLASSIFIER(crop, verbose=False)
                                     if class_results[0].probs:
                                         top_class_id = class_results[0].probs.top1
@@ -124,6 +151,11 @@ def process_video_inference(video_path, upload_time, video_filename):
                             'video_timestamp': f"{int(video_timestamp_sec//60)}:{int(video_timestamp_sec%60):02d}",
                             'vehicle_type': vehicle_type,
                             'confidence': round(conf, 4),
+                            'track_id': track_id,
+                            'x1': x1,
+                            'y1': y1,
+                            'x2': x2,
+                            'y2': y2,
                             'frame': frame_idx,
                             'video_source': video_filename
                         })
@@ -137,7 +169,13 @@ def process_video_inference(video_path, upload_time, video_filename):
         print(f"✅ Detected {len(results_data)} vehicles")
         
         # Create DataFrame
-        df = pd.DataFrame(results_data)
+        if results_data:
+            df = pd.DataFrame(results_data)
+        else:
+            df = pd.DataFrame(columns=[
+                'date', 'time', 'video_timestamp', 'vehicle_type', 'confidence',
+                'track_id', 'x1', 'y1', 'x2', 'y2', 'frame', 'video_source'
+            ])
         
         # Generate CSV filename with date and video name (clean filename)
         video_name_clean = Path(video_filename).stem  # Remove extension
