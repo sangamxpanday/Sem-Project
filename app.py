@@ -120,7 +120,10 @@ def process_video_inference(video_path, upload_time, video_filename):
                         vehicle_type = label
                         if CLASSIFIER:
                             try:
-                                crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
+                                h, w = frame.shape[:2]
+                                x1_clip, y1_clip = max(0, x1), max(0, y1)
+                                x2_clip, y2_clip = min(w, x2), min(h, y2)
+                                crop = frame[y1_clip:y2_clip, x1_clip:x2_clip]
                                 if crop.size > 0:
                                     class_results = CLASSIFIER(crop, verbose=False)
                                     if class_results[0].probs:
@@ -154,10 +157,13 @@ def process_video_inference(video_path, upload_time, video_filename):
         print(f"✅ Detected {len(results_data)} vehicles")
         
         # Create DataFrame
-        df = pd.DataFrame(results_data, columns=[
-            'date', 'time', 'video_timestamp', 'vehicle_type', 'confidence',
-            'track_id', 'x1', 'y1', 'x2', 'y2', 'frame', 'video_source'
-        ])
+        if results_data:
+            df = pd.DataFrame(results_data)
+        else:
+            df = pd.DataFrame(columns=[
+                'date', 'time', 'video_timestamp', 'vehicle_type', 'confidence',
+                'track_id', 'x1', 'y1', 'x2', 'y2', 'frame', 'video_source'
+            ])
         
         # Generate CSV filename with date and video name (clean filename)
         video_name_clean = Path(video_filename).stem  # Remove extension
