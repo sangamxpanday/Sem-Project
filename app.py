@@ -22,6 +22,9 @@ ALLOWED_EXTENSIONS = {'mp4', 'webm', 'mkv', 'avi', 'mov'}
 
 app = Flask(__name__)
 app.secret_key = 'change-this-secret'
+
+# Configure file upload limits (1GB)
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['RESULTS_FOLDER'] = RESULTS_FOLDER
 
@@ -42,15 +45,58 @@ if YOLO_AVAILABLE:
     
     try:
         print("📦 Loading classifier model...")
-        if os.path.exists("models/vehicle_classifier_final.pt"):
-            CLASSIFIER = YOLO("models/vehicle_classifier_final.pt")
-            print("✅ Classifier model loaded")
-        else:
-            print("⚠️  Classifier model not found at models/vehicle_classifier_final.pt")
+        print(f"   Current working directory: {os.getcwd()}")
+        
+        classifier_paths = [
+            "models/vehicle_classifier_final.pt",
+            "/app/models/vehicle_classifier_final.pt",
+            "./models/vehicle_classifier_final.pt",
+        ]
+        
+        classifier_found = False
+        for path in classifier_paths:
+            if os.path.exists(path):
+                size = os.path.getsize(path)
+                print(f"   ✓ Found custom classifier at {path} ({size} bytes)")
+                try:
+                    CLASSIFIER = YOLO(path)
+                    print(f"✅ Classifier model loaded from {path}")
+                    classifier_found = True
+                    break
+                except Exception as load_err:
+                    err_msg = str(load_err)[:150]
+                    if "ultralytics.nn.modules" in err_msg:
+                        print(f"   ⚠️  Custom model incompatible (version mismatch): {err_msg}")
+                    else:
+                        print(f"   ✗ Error loading {path}: {err_msg}")
+        
+        if not classifier_found:
+            print(f"⚠️  Using generic YOLOv8n-cls classifier (custom model not available)")
+            try:
+                CLASSIFIER = YOLO("yolov8n-cls.pt")
+                print(f"✅ Loaded generic YOLOv8n-cls as fallback")
+            except Exception as e:
+                print(f"⚠️  Classifier not available: {e}")
+            
     except Exception as e:
         print(f"❌ Failed to load classifier: {e}")
 
 VEHICLE_CLASSES = ["car", "motorcycle", "bus", "truck"]
+
+
+# Error handlers
+@app.errorhandler(400)
+def bad_request(error):
+    print(f"❌ 400 Bad Request: {error}")
+    flash('❌ Invalid form data. Please try again.')
+    return redirect(url_for('upload_page')), 400
+
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    print(f"❌ 413 File too large: {error}")
+    flash('❌ File too large. Maximum size is 1GB.')
+    return redirect(url_for('upload_page')), 413
 
 
 def allowed_file(filename):
@@ -65,20 +111,30 @@ def process_video_inference(video_path, upload_time, video_filename):
     video_filename: original video filename for tracking
     Returns: path to results CSV
     """
+    print(f"   [1] Checking DETECTOR...")
     if not DETECTOR:
-        print("❌ Detector not available")
+        print(f"   ❌ [1] Detector not available - STOPPING")
         return None
     
+    print(f"   ✅ [1] Detector available")
     results_data = []
     
     try:
         # Open video
+        print(f"   [2] Opening video file...")
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
-        print(f"📹 Processing video: {frame_count} frames at {fps} FPS")
+        print(f"   ✅ [2] Video opened: {frame_count} frames at {fps} FPS")
+        print(f"       File: {video_path}")
+        print(f"       Size: {os.path.getsize(video_path) / (1024*1024):.1f} MB")
         
+        if frame_count == 0 or fps == 0:
+            print(f"   ❌ [2] Invalid video: {frame_count} frames, {fps} FPS - STOPPING")
+            return None
+        
+        print(f"   [3] Starting frame processing...")
         frame_idx = 0
         while True:
             ret, frame = cap.read()
@@ -92,7 +148,7 @@ def process_video_inference(video_path, upload_time, video_filename):
             detection_time = upload_time + timedelta(seconds=video_timestamp_sec)
             
             # Run detection
-            results = DETECTOR(frame, verbose=False, conf=0.5)
+            results = DETECTOR(frame, verbose=False, conf=0.3)
             
             if results and results[0].boxes:
                 for box in results[0].boxes:
@@ -130,13 +186,16 @@ def process_video_inference(video_path, upload_time, video_filename):
             
             frame_idx += 1
             if frame_idx % max(1, frame_count // 10) == 0:
-                print(f"  Progress: {frame_idx}/{frame_count} frames processed")
+                progress = (frame_idx / frame_count) * 100
+                print(f"       ⏳ Progress: {frame_idx}/{frame_count} frames ({progress:.0f}%)")
         
         cap.release()
         
-        print(f"✅ Detected {len(results_data)} vehicles")
+        print(f"   ✅ [3] Frame processing complete")
+        print(f"   📊 [4] Detected {len(results_data)} vehicles total")
         
         # Create DataFrame
+        print(f"   [5] Creating CSV...")
         df = pd.DataFrame(results_data)
         
         # Generate CSV filename with date and video name (clean filename)
@@ -144,11 +203,21 @@ def process_video_inference(video_path, upload_time, video_filename):
         csv_filename = f"{upload_time.strftime('%Y%m%d_%H%M%S')}_{video_name_clean}_traffic.csv"
         csv_path = os.path.join(app.config['RESULTS_FOLDER'], csv_filename)
         
+        print(f"       CSV path: {csv_path}")
+        print(f"       Results folder exists: {os.path.exists(app.config['RESULTS_FOLDER'])}")
+        
         # Save CSV
+        print(f"   [6] Saving CSV file...")
         df.to_csv(csv_path, index=False)
-        print(f"💾 Results saved to: {csv_path}")
+        
+        file_exists = os.path.exists(csv_path)
+        file_size = os.path.getsize(csv_path) if file_exists else 0
+        print(f"   ✅ [6] Results saved to: {csv_path}")
+        print(f"       File exists: {file_exists}")
+        print(f"       File size: {file_size} bytes")
         
         # Also save metadata mapping
+        print(f"   [7] Saving metadata...")
         metadata = {
             'csv_file': csv_filename,
             'video_file': video_filename,
@@ -156,11 +225,15 @@ def process_video_inference(video_path, upload_time, video_filename):
             'detections': len(results_data)
         }
         save_result_metadata(metadata)
+        print(f"   ✅ [7] Metadata saved")
         
         return csv_path
     
     except Exception as e:
-        print(f"❌ Error processing video: {e}")
+        print(f"   ❌ Error in process_video_inference: {type(e).__name__}")
+        print(f"      Message: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -187,10 +260,41 @@ def save_result_metadata(metadata):
 
 
 def process_video_async(video_path, upload_time, video_filename):
-    """Run video processing in background thread."""
-    thread = threading.Thread(target=process_video_inference, args=(video_path, upload_time, video_filename))
+    """Run video processing in background thread with error handling."""
+    def thread_wrapper():
+        try:
+            print(f"\n{'='*60}")
+            print(f"🔄 BACKGROUND PROCESSING STARTED for: {video_filename}")
+            print(f"   Video path: {video_path}")
+            print(f"   Capture time: {upload_time}")
+            print(f"   File exists: {os.path.exists(video_path)}")
+            if os.path.exists(video_path):
+                print(f"   File size: {os.path.getsize(video_path) / (1024*1024):.1f} MB")
+            print(f"{'='*60}\n")
+            
+            result = process_video_inference(video_path, upload_time, video_filename)
+            
+            if result:
+                print(f"\n✅ BACKGROUND PROCESSING COMPLETED SUCCESSFULLY")
+                print(f"   Results saved to: {result}")
+                csv_exists = os.path.exists(result)
+                print(f"   CSV file exists: {csv_exists}")
+                if csv_exists:
+                    print(f"   CSV size: {os.path.getsize(result)} bytes")
+                print(f"\n")
+            else:
+                print(f"\n⚠️  BACKGROUND PROCESSING RETURNED NO RESULTS\n")
+        except Exception as e:
+            print(f"\n❌ BACKGROUND THREAD ERROR: {type(e).__name__}")
+            print(f"   Message: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"\n")
+    
+    thread = threading.Thread(target=thread_wrapper)
     thread.daemon = True
     thread.start()
+    print(f"📌 Background thread started (check logs for progress)")
 
 
 @app.route('/', methods=['GET'])
@@ -206,51 +310,51 @@ def upload_page():
 
 @app.route('/upload', methods=['POST'])
 def upload_video():
-    if 'video' not in request.files:
-        flash('❌ No file part')
-        return redirect(url_for('upload_page'))
-
-    file = request.files['video']
-    if file.filename == '':
-        flash('❌ No selected file')
-        return redirect(url_for('upload_page'))
-
-    # Get date and time from form
-    upload_date_str = request.form.get('upload_date')
-    upload_time_str = request.form.get('upload_time')
-    
-    if not upload_date_str or not upload_time_str:
-        flash('❌ Please provide both date and time')
-        return redirect(url_for('upload_page'))
-    
     try:
-        # Parse date and time
-        upload_time = datetime.strptime(f"{upload_date_str} {upload_time_str}", "%Y-%m-%d %H:%M")
-    except ValueError as e:
-        flash('❌ Invalid date/time format')
-        return redirect(url_for('upload_page'))
+        if 'video' not in request.files:
+            flash('❌ No video file selected')
+            return redirect(url_for('upload_page'))
 
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        dest_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(dest_path)
-        
-        # Use form date/time
-        flash(f'✅ Uploaded: {filename} at {upload_time.strftime("%Y-%m-%d %H:%M:%S")}')
-        
-        # Start background processing
-        if YOLO_AVAILABLE and DETECTOR:
-            print(f"🎬 Starting model inference on: {filename}")
-            print(f"   Capture time: {upload_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            process_video_async(dest_path, upload_time, filename)
-            flash(f'📊 Model inference started (results will be saved to CSV)')
-        else:
-            flash(f'⚠️  Model inference not available (YOLO not loaded)')
-        
-        return redirect(url_for('upload_page'))
+        file = request.files['video']
+        if file.filename == '':
+            flash('❌ No selected file')
+            return redirect(url_for('upload_page'))
 
-    flash('❌ Invalid video format. Allowed: ' + ', '.join(sorted(ALLOWED_EXTENSIONS)))
-    return redirect(url_for('upload_page'))
+        upload_date_str = request.form.get('upload_date')
+        upload_time_str = request.form.get('upload_time')
+        
+        if not upload_date_str or not upload_time_str:
+            flash('❌ Please provide both date and time')
+            return redirect(url_for('upload_page'))
+        
+        try:
+            upload_time = datetime.strptime(f"{upload_date_str} {upload_time_str}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            flash('❌ Invalid date/time format')
+            return redirect(url_for('upload_page'))
+
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            dest_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(dest_path)
+            
+            print(f"✅ Video uploaded: {filename} ({os.path.getsize(dest_path)} bytes)")
+            flash(f'✅ Uploaded: {filename}')
+            
+            if YOLO_AVAILABLE and DETECTOR:
+                print(f"🎬 Starting inference: {filename}")
+                process_video_async(dest_path, upload_time, filename)
+                flash(f'📊 Processing started...')
+            
+            return redirect(url_for('upload_page'))
+
+        flash('❌ Invalid video format. Allowed: mp4, webm, mkv, avi, mov')
+        return redirect(url_for('upload_page'))
+        
+    except Exception as e:
+        print(f"❌ Upload error: {type(e).__name__}: {str(e)[:200]}")
+        flash(f'❌ Upload failed')
+        return redirect(url_for('upload_page'))
 
 
 @app.route('/uploads/videos/<path:filename>')
@@ -299,5 +403,29 @@ def download_result(filename):
     return send_from_directory(app.config['RESULTS_FOLDER'], filename)
 
 
+@app.route('/api/status')
+def api_status():
+    """API endpoint for system status."""
+    return {
+        'status': 'running',
+        'yolo_available': YOLO_AVAILABLE,
+        'detector_loaded': DETECTOR is not None,
+        'classifier_loaded': CLASSIFIER is not None,
+        'upload_folder': app.config['UPLOAD_FOLDER'],
+        'results_folder': app.config['RESULTS_FOLDER']
+    }
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    print("\n" + "="*60)
+    print("🚗 VEHICLE DETECTION NEPAL - Starting Application")
+    print("="*60)
+    print(f"🔧 YOLO Available: {YOLO_AVAILABLE}")
+    print(f"🤖 Detector Loaded: {DETECTOR is not None}")
+    print(f"📊 Classifier Loaded: {CLASSIFIER is not None}")
+    print("="*60 + "\n")
+    
+    import os
+    port = int(os.environ.get('PORT', 7860))
+    debug = os.environ.get('DEBUG', 'False') == 'True'
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
