@@ -101,8 +101,9 @@ def process_video_inference(video_path, upload_time, video_filename):
                     conf=0.5,
                     tracker=TRACKER_CONFIG
                 )
-            except Exception:
+            except Exception as e:
                 # Fallback to plain detection if tracker has an environment issue
+                print(f"⚠️  Tracking unavailable, falling back to detection-only mode: {e}")
                 results = DETECTOR(frame, verbose=False, conf=0.5)
             
             if results and results[0].boxes:
@@ -114,7 +115,7 @@ def process_video_inference(video_path, upload_time, video_filename):
                     if label in VEHICLE_CLASSES:
                         conf = float(box.conf[0])
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        track_id = int(box.id[0]) if box.id is not None else None
+                        track_id = int(box.id[0]) if hasattr(box, "id") and box.id is not None else None
                         
                         # Try to classify if classifier available
                         vehicle_type = label
