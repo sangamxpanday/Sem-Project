@@ -116,12 +116,14 @@ def process_video_inference(video_path, upload_time, video_filename):
                         conf = float(box.conf[0])
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         track_id = None
-                        if hasattr(box, "id") and box.id is not None:
-                            try:
-                                if len(box.id) > 0:
-                                    track_id = int(box.id[0])
-                            except TypeError:
-                                track_id = int(box.id)
+                        track_value = getattr(box, "id", None)
+                        if track_value is not None:
+                            track_value = track_value.tolist() if hasattr(track_value, "tolist") else track_value
+                            if isinstance(track_value, (list, tuple)):
+                                if track_value:
+                                    track_id = int(track_value[0])
+                            else:
+                                track_id = int(track_value)
                         
                         # Try to classify if classifier available
                         vehicle_type = label
@@ -130,8 +132,11 @@ def process_video_inference(video_path, upload_time, video_filename):
                                 h, w = frame.shape[:2]
                                 x1_clip, y1_clip = max(0, x1), max(0, y1)
                                 x2_clip, y2_clip = min(w, x2), min(h, y2)
-                                crop = frame[y1_clip:y2_clip, x1_clip:x2_clip]
-                                if crop.size > 0:
+                                if x1_clip < x2_clip and y1_clip < y2_clip:
+                                    crop = frame[y1_clip:y2_clip, x1_clip:x2_clip]
+                                else:
+                                    crop = None
+                                if crop is not None and crop.size > 0:
                                     class_results = CLASSIFIER(crop, verbose=False)
                                     if class_results[0].probs:
                                         top_class_id = class_results[0].probs.top1
