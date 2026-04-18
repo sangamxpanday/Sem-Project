@@ -199,69 +199,69 @@ def process_video_inference(video_path, upload_time, video_filename):
             # Update tracker with detections
             if tracker and detections:
                 try:
-                    detections = np.array(detections, dtype=np.float32)
-                    tracked_objects = tracker.update_tracks(detections, frame=frame)
+                    # Convert detections to list format: [[x1,y1,x2,y2,conf], [x1,y1,x2,y2,conf], ...]
+                    detections_list = [list(det) for det in detections] if len(detections) > 0 else []
                     
-                    for track in tracked_objects:
-                        if not track.is_confirmed():
-                            continue
+                    if detections_list:
+                        tracked_objects = tracker.update_tracks(detections_list, frame=frame)
                         
-                        track_id = track.track_id
-                        x1, y1, x2, y2 = [int(x) for x in track.to_tlbr()]
-                        
-                        # Find corresponding detection info
-                        detection_idx = track.detection_as_np(True) if hasattr(track, 'detection_as_np') else None
-                        
-                        # Get detection info (match by proximity)
-                        best_match_idx = None
-                        best_dist = float('inf')
-                        for det_idx, det_info in detection_info.items():
-                            d_x1, d_y1, d_x2, d_y2 = det_info['bbox']
-                            dist = abs(d_x1 - x1) + abs(d_y1 - y1)
-                            if dist < best_dist:
-                                best_dist = dist
-                                best_match_idx = det_idx
-                        
-                        if best_match_idx is not None:
-                            det_info = detection_info[best_match_idx]
-                            label = det_info['label']
-                            conf = det_info['conf']
+                        for track in tracked_objects:
+                            if not track.is_confirmed():
+                                continue
                             
-                            # Try to classify if classifier available
-                            vehicle_type = label
-                            crop = frame[y1:y2, x1:x2]
-                            if CLASSIFIER and crop.size > 0:
-                                try:
-                                    class_results = CLASSIFIER(crop, verbose=False)
-                                    if class_results[0].probs:
-                                        top_class_id = class_results[0].probs.top1
-                                        top_class_name = class_results[0].names[top_class_id]
-                                        vehicle_type = f"{label}_{top_class_name}"
-                                except:
-                                    pass
+                            track_id = track.track_id
+                            x1, y1, x2, y2 = [int(x) for x in track.to_tlbr()]
                             
-                            # Store track info
-                            if track_id not in track_info:
-                                track_info[track_id] = {
-                                    'first_frame': frame_idx,
-                                    'first_time': detection_time,
+                            # Find corresponding detection info (match by proximity)
+                            best_match_idx = None
+                            best_dist = float('inf')
+                            for det_idx, det_info in detection_info.items():
+                                d_x1, d_y1, d_x2, d_y2 = det_info['bbox']
+                                dist = abs(d_x1 - x1) + abs(d_y1 - y1)
+                                if dist < best_dist:
+                                    best_dist = dist
+                                    best_match_idx = det_idx
+                            
+                            if best_match_idx is not None:
+                                det_info = detection_info[best_match_idx]
+                                label = det_info['label']
+                                conf = det_info['conf']
+                                
+                                # Try to classify if classifier available
+                                vehicle_type = label
+                                crop = frame[y1:y2, x1:x2]
+                                if CLASSIFIER and crop.size > 0:
+                                    try:
+                                        class_results = CLASSIFIER(crop, verbose=False)
+                                        if class_results[0].probs:
+                                            top_class_id = class_results[0].probs.top1
+                                            top_class_name = class_results[0].names[top_class_id]
+                                            vehicle_type = f"{label}_{top_class_name}"
+                                    except:
+                                        pass
+                                
+                                # Store track info
+                                if track_id not in track_info:
+                                    track_info[track_id] = {
+                                        'first_frame': frame_idx,
+                                        'first_time': detection_time,
+                                        'vehicle_type': vehicle_type,
+                                        'confidence': conf
+                                    }
+                                
+                                track_info[track_id]['last_frame'] = frame_idx
+                                track_info[track_id]['last_time'] = detection_time
+                                
+                                results_data.append({
+                                    'date': detection_time.strftime('%Y-%m-%d'),
+                                    'time': detection_time.strftime('%H:%M:%S'),
+                                    'video_timestamp': f"{int(video_timestamp_sec//60)}:{int(video_timestamp_sec%60):02d}",
+                                    'track_id': track_id,
                                     'vehicle_type': vehicle_type,
-                                    'confidence': conf
-                                }
-                            
-                            track_info[track_id]['last_frame'] = frame_idx
-                            track_info[track_id]['last_time'] = detection_time
-                            
-                            results_data.append({
-                                'date': detection_time.strftime('%Y-%m-%d'),
-                                'time': detection_time.strftime('%H:%M:%S'),
-                                'video_timestamp': f"{int(video_timestamp_sec//60)}:{int(video_timestamp_sec%60):02d}",
-                                'track_id': track_id,
-                                'vehicle_type': vehicle_type,
-                                'confidence': round(conf, 4),
-                                'frame': frame_idx,
-                                'video_source': video_filename
-                            })
+                                    'confidence': round(conf, 4),
+                                    'frame': frame_idx,
+                                    'video_source': video_filename
+                                })
                 
                 except Exception as e:
                     print(f"       ⚠️  Tracking error on frame {frame_idx}: {e}")
