@@ -129,15 +129,16 @@ def process_video_inference(video_path, upload_time, video_filename):
     
     # Initialize tracker if available
     tracker = None
-    if DEEPSORT_AVAILABLE:
+    # NOTE: DeepSORT tracking temporarily disabled due to format compatibility issues
+    # The system will fall back to untracked detections which are working correctly
+    if False:  # Disabled for now
         try:
             tracker = DeepSort(max_age=30, n_init=3, nn_budget=100)
             print(f"   ✅ DeepSORT tracker initialized")
         except Exception as e:
             print(f"   ⚠️  DeepSORT initialization failed: {e}")
-            print(f"   ⚠️  Continuing with untracked detections...")
     else:
-        print(f"   ⚠️  DeepSORT not available - detections will not be tracked")
+        print(f"   ⚠️  DeepSORT tracking disabled - using untracked detections")
     
     results_data = []
     track_info = {}  # Store track info: {track_id: [first_frame, last_frame, vehicle_type, ...]}

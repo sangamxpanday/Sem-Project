@@ -14,5 +14,13 @@
     "total_detections": 2343,
     "unique_tracks": 0,
     "track_info": {}
+  },
+  {
+    "csv_file": "20260418_132900_13566876_3840_2160_30fps_traffic.csv",
+    "video_file": "13566876_3840_2160_30fps.mp4",
+    "capture_time": "2026-04-18T13:29:00",
+    "total_detections": 0,
+    "unique_tracks": 0,
+    "track_info": {}
   }
 ]
